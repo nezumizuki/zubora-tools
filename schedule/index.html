@@ -64,7 +64,9 @@
   .games input { display: none; }
   .games label.on { color: #10141a; font-weight: bold; }
   .memo { width: 100%; margin-top: 8px; }
-  .day.off .games, .day.off .memo, .day.off input[type=time] { display: none; }
+  .day.off .games, .day.off .memo, .day.off input[type=time], .day.off .tbdLabel { display: none; }
+  .day.tbd input[type=time] { display: none; }
+  .tbdLabel { font-size: 13px; color: #bbb; }
   .gameText { width: 100%; box-sizing: border-box; min-height: 110px; margin-top: 8px; padding: 6px; border-radius: 6px; border: 1px solid #555; background: #2a2b31; color: #eee; font: 14px "Yu Gothic UI", "Meiryo", sans-serif; resize: vertical; }
 
   /* ===== スマホ(画面がせまいとき) ===== */
@@ -389,13 +391,14 @@ function buildDays() {
   const dates = weekDates();
   state.days.forEach((day, i) => {
     const row = document.createElement("div");
-    row.className = "day" + (day.on ? "" : " off");
+    row.className = "day" + (day.on ? "" : " off") + (day.tbd ? " tbd" : "");
     const cls = i === 5 ? "sat" : i === 6 ? "sun" : "";
     row.innerHTML = `
       <div class="day-head">
         <span class="day-name ${cls}">${md(dates[i])}(${DAY_NAMES[i]})</span>
         <label><input type="checkbox" class="on" ${day.on ? "checked" : ""}> 配信する</label>
         <input type="time" class="time" value="${day.time}">
+        <label class="tbdLabel"><input type="checkbox" class="tbdCheck" ${day.tbd ? "checked" : ""}> 時間未定</label>
       </div>
       <div class="games"></div>
       <input type="text" class="memo" placeholder="ひとこと(例:参加型、新シーズン初日)">`;
@@ -429,6 +432,12 @@ function buildDays() {
       save(); draw();
     };
     row.querySelector(".time").oninput = e => { day.time = e.target.value; save(); draw(); };
+    // 「時間未定」にしても、入れてあった時間は消さずに残しておく(チェックを外すと元に戻る)
+    row.querySelector(".tbdCheck").onchange = e => {
+      day.tbd = e.target.checked;
+      row.classList.toggle("tbd", day.tbd);
+      save(); draw();
+    };
     row.querySelector(".memo").oninput = e => { day.memo = e.target.value; save(); draw(); };
     box.append(row);
   });
@@ -753,8 +762,9 @@ function drawRows(x0, y0, x1, y1, dates, compact) {
       ctx.fillText(DAY_EN[i], x0 + 30 * k, y + h / 2 - 22 * k);
       ctx.font = `700 ${24 * k}px ${EN}`;
       ctx.fillText(md(dates[i]), x0 + 125 * k, y + h / 2 - 22 * k);
-      ctx.fillStyle = day.on ? C.accent2 : C.dim; ctx.font = `700 ${36 * k}px ${EN}`;
-      ctx.fillText(day.on ? (day.time || "--:--") : "-", x0 + 30 * k, y + h / 2 + 22 * k);
+      ctx.fillStyle = day.on ? C.accent2 : C.dim;
+      if (day.on && timeTbd(day)) { ctx.font = `800 ${34 * k}px ${JP}`; ctx.fillText("時間未定", x0 + 30 * k, y + h / 2 + 22 * k); }
+      else { ctx.font = `700 ${36 * k}px ${EN}`; ctx.fillText(day.on ? day.time : "-", x0 + 30 * k, y + h / 2 + 22 * k); }
       ctx.fillStyle = C.line; ctx.fillRect(x0 + 230 * k, y + 20 * k, 2, h - 40 * k);
       gx = x0 + 256 * k;
     } else {
@@ -764,7 +774,11 @@ function drawRows(x0, y0, x1, y1, dates, compact) {
       ctx.font = `700 ${30 * k}px ${EN}`;
       ctx.fillText(md(dates[i]), x0 + 36 * k, y + h / 2 + 24 * k);
       ctx.fillStyle = C.line; ctx.fillRect(x0 + 190 * k, y + 20 * k, 2, h - 40 * k);
-      if (day.on) { ctx.fillStyle = C.accent2; ctx.font = `700 ${40 * k}px ${EN}`; ctx.fillText(day.time || "--:--", x0 + 220 * k, y + h / 2); }
+      if (day.on) {
+        ctx.fillStyle = C.accent2;
+        if (timeTbd(day)) { ctx.font = `800 ${36 * k}px ${JP}`; ctx.fillText("時間未定", x0 + 220 * k, y + h / 2); }
+        else { ctx.font = `700 ${40 * k}px ${EN}`; ctx.fillText(day.time, x0 + 220 * k, y + h / 2); }
+      }
       gx = x0 + (day.on ? 420 : 220) * k;
     }
 
@@ -783,6 +797,9 @@ function drawRows(x0, y0, x1, y1, dates, compact) {
   });
   ctx.textBaseline = "alphabetic";
 }
+
+// 「時間未定」にチェックしたか、時間が空っぽのときは「時間未定」と出す
+function timeTbd(day) { return !!day.tbd || !day.time; }
 
 // 立ち絵を置く場所(右下にくっつける)
 function charaRect(W, H) {
@@ -851,7 +868,7 @@ document.getElementById("copyText").onclick = async () => {
   const lines = state.days.map((day, i) => {
     const head = md(dates[i]) + "(" + DAY_NAMES[i] + ")";
     if (!day.on) return head + " おやすみ";
-    return head + " " + day.time + "〜 " + (day.picks.join(" / ") || "未定") + (day.memo ? "(" + day.memo + ")" : "");
+    return head + " " + (timeTbd(day) ? "時間未定 " : day.time + "〜 ") +(day.picks.join(" / ") || "未定") + (day.memo ? "(" + day.memo + ")" : "");
   });
   const tag = state.profile.hashtag.trim();
   const text = "📅" + (state.profile.titleJp || "今週の配信予定") + " " + md(dates[0]) + "〜" + md(dates[6]) + "\n\n" + lines.join("\n") + (tag ? "\n\n" + tag : "");
